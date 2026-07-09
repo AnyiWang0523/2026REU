@@ -62,7 +62,39 @@ WSDI/
 
 All climate data accessed remotely via OPeNDAP — no large local downloads required.
 
-> **Note:** Raw data files (`data/`) and generated outputs (`output/`) are not tracked in this repository due to size. See the data sources above to reproduce them.
+> **Note:** Raw data files (`data/`) and generated outputs (`output/`) are not tracked in this repository due to size. See **Data Access** below to download them.
+
+---
+
+## Data Access
+
+All input datasets are publicly available. Download and place them in the `data/` directory as shown in [Project Structure](#project-structure).
+
+### Climate Data (accessed via OPeNDAP — no download needed)
+The analysis scripts fetch these remotely at runtime using `pydap`:
+- **Monthly Precipitation (CMAP Enhanced):** `https://psl.noaa.gov/thredds/dodsC/Datasets/cmap/enh/precip.mon.mean.nc`
+- **Monthly Temperature (GHCN+CAMS):** `https://psl.noaa.gov/thredds/dodsC/Datasets/ghcncams/air.mon.mean.nc`
+- **PDSI (Dai scPDSI):** `https://psl.noaa.gov/thredds/dodsC/Datasets/dai_pdsi/pdsi.mon.mean.selfcalibrated.nc`
+
+### Boundary & Reference Data
+| File | Source | Download |
+|---|---|---|
+| HUC4 Watershed Boundaries (`WBDHU4.shp`) | USGS NHD WBD | [USGS TNM Download](https://apps.nationalmap.gov/downloader/) → Hydrography → WBD |
+| U.S. State Boundaries | U.S. Census Bureau TIGER | [Census TIGER Shapefiles](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html) → States → 2020 500k |
+| Major Streams | USGS NHD | [USGS NHD Download](https://www.usgs.gov/national-hydrography/access-national-hydrography-products) |
+
+### Dam & Reservoir Data
+| File | Source | Download |
+|---|---|---|
+| National Inventory of Dams (`NID_All_USA*.shp`) | U.S. Army Corps of Engineers | [NID Download](https://nid.sec.usace.army.mil/) → Downloads → Shapefile |
+| Reservoir storage time series (`data/CSV/*.csv`) | Global Reservoir and Dam Database (GRanD) / HydroShare | [HydroShare](https://www.hydroshare.org/) |
+
+### Water Use Data
+| File | Source | Download |
+|---|---|---|
+| Irrigation water withdrawals (`IR_HUC12_*.csv`) | USGS National Water Use Science | [USGS NWIS Water Use Data](https://waterdata.usgs.gov/nwis/wu) |
+| Public supply withdrawals (`PS_HUC12_*.csv`) | USGS National Water Use Science | [USGS NWIS Water Use Data](https://waterdata.usgs.gov/nwis/wu) |
+| Global Building Database (`data/GBD/`) | Global Human Settlement Layer | [JRC GHSL](https://human-settlement.emergency.copernicus.eu/download.php) |
 
 ---
 
