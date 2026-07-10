@@ -6,9 +6,9 @@ Implements the R-code formula from Vora & Cai (2026):
     Drought_Threshold[m] = quantile(monthly_avg_storage, 0.25)   per calendar month
     RDI_t = (monthly_avg_storage_t - Drought_Threshold[month(t)]) / mean(all monthly_avg)
 
-HUC4 aggregation by dynamic monthly storage-share weight:
-    weight_i_t  = S_i_t / sum_j(S_j_t)
-    RDI_HUC4_t  = sum_i( RDI_i_t * weight_i_t )
+HUC4 aggregation by aggregate-first approach:
+    S_HUC4_t    = sum_i(S_i_t)
+    RDI_HUC4_t  = (S_HUC4_t - Threshold[month(t)]) / mean(S_HUC4)
 
 Data source:
     data/hydroshare_data/{GRanD_ID}.csv
@@ -142,16 +142,17 @@ def compute_rdi(monthly_s: pd.Series) -> tuple[pd.Series, np.ndarray]:
     return rdi_vals, thresholds
 
 
-def aggregate_huc4(storage_mat: pd.DataFrame,
-                   rdi_mat: pd.DataFrame) -> pd.Series:
+def aggregate_huc4(storage_mat: pd.DataFrame) -> pd.Series:
     """
-    Weight each reservoir by its monthly storage share:
-        w_i_t = S_i_t / sum_j(S_j_t)
-        RDI_HUC4_t = sum_i( RDI_i_t * w_i_t )
+    Aggregate-first approach: sum reservoir storages, then compute one RDI
+    on the combined series.
+        S_HUC4_t = sum_i(S_i_t)
+        Threshold[m] = quantile(S_HUC4 where Month==m, 0.25)
+        RDI_HUC4_t = (S_HUC4_t - Threshold[month(t)]) / mean(S_HUC4)
     """
-    total   = storage_mat.sum(axis=1, skipna=True)
-    weights = storage_mat.div(total, axis=0)
-    return (rdi_mat * weights).sum(axis=1, skipna=True)
+    combined = storage_mat.sum(axis=1, skipna=True).replace(0, np.nan)
+    rdi_huc4, _ = compute_rdi(combined)
+    return rdi_huc4
 
 
 # ── Main loop over all valid HUC4s ────────────────────────────────────────────
@@ -214,11 +215,10 @@ for _, huc_row in valid_huc4.iterrows():
         print("  -> all reservoirs failed, skip")
         continue
 
-    # HUC4 aggregation
+    # HUC4 aggregation (aggregate storage first, then compute RDI)
     storage_mat = pd.DataFrame(storage_cols, index=FULL_MONTHS)
-    rdi_mat     = pd.DataFrame(rdi_cols,     index=FULL_MONTHS)
-    rdi_huc4    = aggregate_huc4(storage_mat, rdi_mat)
-    n_valid     = rdi_mat.notna().sum(axis=1)
+    rdi_huc4    = aggregate_huc4(storage_mat)
+    n_valid     = storage_mat.notna().sum(axis=1)
 
     for dt, rdi_val, n in zip(FULL_MONTHS, rdi_huc4.values, n_valid.values):
         huc4_rows.append({
