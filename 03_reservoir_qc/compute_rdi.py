@@ -15,7 +15,7 @@ Data source:
     Columns: Time(YYYY-MM-DD), Storage(fraction 0-1), NetInflow(fraction), Release(fraction)
     Reservoir IDs and capacities from data/CSV/GDROM_Resv.csv
 
-Analysis period: 1990-01-01 to 2016-07-31 (HydroShare coverage)
+Analysis period: dynamic — uses only months where ALL reservoirs in a HUC4 have valid data.
 
 Outputs:
     output/rdi/all_HUC4_RDI.csv            -- monthly RDI for all valid HUC4s
@@ -40,10 +40,6 @@ HYDROSHARE_DIR = os.path.join(BASE_DIR, "data", "hydroshare_data")
 VALID_CSV      = os.path.join(BASE_DIR, "output", "huc4_valid_coverage50.csv")
 OUTPUT_DIR     = os.path.join(BASE_DIR, "output", "rdi")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-START_DATE  = "1990-01-01"
-END_DATE    = "2016-07-31"
-FULL_MONTHS = pd.date_range(START_DATE, END_DATE, freq="MS")
 
 AF_TO_CFS = 43560 / 86400
 
@@ -127,11 +123,11 @@ def compute_rdi(monthly_s: pd.Series) -> tuple[pd.Series, np.ndarray]:
     R-code formula:
         Threshold[m] = quantile(S where Month==m, 0.25)
         RDI_t = (S_t - Threshold[month(t)]) / mean(S_all)
-    Returns (RDI Series on FULL_MONTHS index, thresholds[12])
+    Returns (RDI Series on monthly_s.index, thresholds[12])
     """
     overall_mean = monthly_s.mean(skipna=True)
     thresholds   = np.full(12, np.nan)
-    rdi_vals     = pd.Series(np.nan, index=FULL_MONTHS)
+    rdi_vals     = pd.Series(np.nan, index=monthly_s.index)
 
     for m in range(1, 13):
         mask            = monthly_s.index.month == m
@@ -144,14 +140,15 @@ def compute_rdi(monthly_s: pd.Series) -> tuple[pd.Series, np.ndarray]:
 
 def aggregate_huc4(storage_mat: pd.DataFrame) -> pd.Series:
     """
-    Aggregate-first approach: sum reservoir storages, then compute one RDI
-    on the combined series.
-        S_HUC4_t = sum_i(S_i_t)
-        Threshold[m] = quantile(S_HUC4 where Month==m, 0.25)
-        RDI_HUC4_t = (S_HUC4_t - Threshold[month(t)]) / mean(S_HUC4)
+    Aggregate-first approach, intersection months only:
+        1. Keep only months where ALL reservoirs have valid data
+        2. Sum storage across reservoirs: S_HUC4_t = sum_i(S_i_t)
+        3. Compute RDI on the combined series
     """
-    combined = storage_mat.sum(axis=1, skipna=True).replace(0, np.nan)
-    rdi_huc4, _ = compute_rdi(combined)
+    valid_mask        = storage_mat.notna().all(axis=1)
+    storage_intersect = storage_mat[valid_mask]
+    combined          = storage_intersect.sum(axis=1).replace(0, np.nan)
+    rdi_huc4, _       = compute_rdi(combined)
     return rdi_huc4
 
 
@@ -180,24 +177,20 @@ for _, huc_row in valid_huc4.iterrows():
 
     print(f"  {huc4} {name:35s}  {len(resv)} reservoirs", end="", flush=True)
 
-    # Per-reservoir: load -> monthly avg -> RDI
+    # Per-reservoir: load -> monthly avg
     storage_cols = {}
-    rdi_cols     = {}
 
     for _, r in resv.iterrows():
         gid = int(r["GRanD_ID"])
         cap = r["max_historical_Storage_af"]
         try:
             daily   = load_hydroshare(gid, cap)
-            monthly = daily.resample("MS").mean().reindex(FULL_MONTHS)
-            rdi, _  = compute_rdi(monthly)
+            monthly = daily.resample("MS").mean()
 
             storage_cols[gid] = monthly
-            rdi_cols[gid]     = rdi
 
-            # Save per-reservoir rows
-            for dt, s_val, rdi_val in zip(FULL_MONTHS,
-                                           monthly.values, rdi.values):
+            # Save per-reservoir rows (full individual range)
+            for dt, s_val in zip(monthly.index, monthly.values):
                 resv_rows.append({
                     "huc4": huc4, "huc4_name": name,
                     "GRanD_ID": gid, "dam_name": r["dam name"],
@@ -205,7 +198,6 @@ for _, huc_row in valid_huc4.iterrows():
                     "date": dt,
                     "Year": dt.year, "Month": dt.month,
                     "avg_storage_af": s_val,
-                    "RDI": rdi_val,
                 })
         except Exception as e:
             print(f"\n    WARNING: {r['dam name']} (ID {gid}) failed: {e}")
@@ -215,18 +207,18 @@ for _, huc_row in valid_huc4.iterrows():
         print("  -> all reservoirs failed, skip")
         continue
 
-    # HUC4 aggregation (aggregate storage first, then compute RDI)
-    storage_mat = pd.DataFrame(storage_cols, index=FULL_MONTHS)
+    # HUC4 aggregation: intersection months only, then compute RDI
+    storage_mat = pd.DataFrame(storage_cols)
     rdi_huc4    = aggregate_huc4(storage_mat)
-    n_valid     = storage_mat.notna().sum(axis=1)
+    n_resv      = len(storage_cols)
 
-    for dt, rdi_val, n in zip(FULL_MONTHS, rdi_huc4.values, n_valid.values):
+    for dt, rdi_val in zip(rdi_huc4.index, rdi_huc4.values):
         huc4_rows.append({
             "huc4": huc4, "huc4_name": name,
             "date": dt,
             "Year": dt.year, "Month": dt.month,
             "RDI_HUC4": rdi_val,
-            "n_reservoirs": int(n),
+            "n_reservoirs": n_resv,
         })
 
     valid_n = sum(~np.isnan(rdi_huc4.values))
