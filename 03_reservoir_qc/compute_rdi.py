@@ -212,6 +212,11 @@ for _, huc_row in valid_huc4.iterrows():
     rdi_huc4    = aggregate_huc4(storage_mat)
     n_resv      = len(storage_cols)
 
+    if rdi_huc4.empty:
+        skipped.append(huc4)
+        print("  -> no overlapping months across reservoirs, skip")
+        continue
+
     for dt, rdi_val in zip(rdi_huc4.index, rdi_huc4.values):
         huc4_rows.append({
             "huc4": huc4, "huc4_name": name,
@@ -222,8 +227,11 @@ for _, huc_row in valid_huc4.iterrows():
         })
 
     valid_n = sum(~np.isnan(rdi_huc4.values))
-    rng     = (float(np.nanmin(rdi_huc4)), float(np.nanmax(rdi_huc4)))
-    print(f"  valid={valid_n}mo  RDI=[{rng[0]:.2f},{rng[1]:.2f}]")
+    if valid_n == 0:
+        print(f"  valid=0mo  RDI=[n/a]")
+    else:
+        rng = (float(np.nanmin(rdi_huc4)), float(np.nanmax(rdi_huc4)))
+        print(f"  valid={valid_n}mo  RDI=[{rng[0]:.2f},{rng[1]:.2f}]")
 
 # ── Save outputs ──────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
